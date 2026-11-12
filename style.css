@@ -144,3 +144,7 @@ dialog #clientName:focus{border-color:var(--y)}
   .hero{flex-direction:column;align-items:flex-start}
 }
 @media (hover:none){.x{opacity:.8}}
+
+#notesText{width:100%;min-height:220px;padding:15px 18px;border-radius:var(--r-in);border:2px solid transparent;background:var(--soft);color:var(--ink);outline:none;font:500 16px/1.45 Inter,system-ui,sans-serif;resize:vertical}
+#notesText:focus{border-color:var(--y)}
+#notesText::placeholder{color:var(--mute)}

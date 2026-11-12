@@ -1,4 +1,4 @@
-const VERSION = 'cd-v3';
+const VERSION = 'cd-v4';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'config.js',
   'manifest.webmanifest', 'fonts/NulshockRg-Bold.woff2', 'favicon.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'

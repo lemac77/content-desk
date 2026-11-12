@@ -139,6 +139,42 @@ function addItem(c, kind, item) {
         done: false, created_at: new Date(item.t).toISOString()
       }));
 }
+const URL_RE = /https?:\/\/[^\s<>"]+/i;
+function cleanUrl(u) {
+  try {
+    const x = new URL(u); x.hash = '';
+    if (/(^|\.)(instagram|tiktok)\.com$/.test(x.hostname)) x.search = '';
+    return x.toString();
+  } catch { return u; }
+}
+// "Titolo\nlink\n\nTitolo\nlink" oppure "Titolo link" oppure solo link
+function parseNotes(text) {
+  const out = []; let pending = null;
+  text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(line => {
+    const m = line.match(URL_RE);
+    if (!m) { pending = line; return; }
+    const inline = line.replace(m[0], '').replace(/^[\s:\-|,]+|[\s:\-|,]+$/g, '');
+    const url = cleanUrl(m[0]);
+    out.push({ url, title: inline || pending || ('Reel ' + platform(url)[1]) });
+    pending = null;
+  });
+  return out;
+}
+function importNotes(text) {
+  const c = cur(); if (!c) return toast('Crea prima un cliente');
+  const have = new Set(c.reels.map(r => r.url));
+  const seen = new Set();
+  const found = parseNotes(text).filter(r => !have.has(r.url) && !seen.has(r.url) && seen.add(r.url));
+  if (!found.length) return toast('Nessun link nuovo trovato');
+  const base = Date.now();
+  const items = found.map((r, i) => ({ id: uuid(), title: r.title, url: r.url, done: false, t: base + (found.length - i) }));
+  mut(() => c.reels.push(...items),
+      () => sb.from('items').insert(items.map(it => ({
+        id: it.id, client_id: c.id, kind: 'reel', title: it.title, url: it.url, done: false,
+        created_at: new Date(it.t).toISOString() }))));
+  toast(items.length + (items.length === 1 ? ' reel aggiunto' : ' reel aggiunti'));
+}
+
 function toggle(it) {
   mut(() => { it.done = !it.done; }, () => sb.from('items').update({ done: it.done }).eq('id', it.id));
 }
@@ -202,7 +238,11 @@ function cardHead(title, list) {
 
 function reelsCard(c) {
   const url = h('input', { 'data-f': 'reelUrl', placeholder: 'Incolla il link TikTok o Instagram', inputmode: 'url',
-    autocapitalize: 'none', autocorrect: 'off', value: draft.reelUrl, oninput: e => draft.reelUrl = e.target.value });
+    autocapitalize: 'none', autocorrect: 'off', value: draft.reelUrl, oninput: e => draft.reelUrl = e.target.value,
+    onpaste: e => {
+      const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
+      if (t.trim().includes('\n')) { e.preventDefault(); importNotes(t); }
+    } });
   const ttl = h('input', { 'data-f': 'reelTitle', placeholder: 'Titolo', value: draft.reelTitle,
     oninput: e => draft.reelTitle = e.target.value });
   const form = h('form', { class: 'composer', onsubmit: e => {
@@ -212,7 +252,8 @@ function reelsCard(c) {
     addItem(c, 'reel', { id: uuid(), title: draft.reelTitle.trim() || ('Reel ' + platform(full)[1]), url: full, done: false, t: Date.now() });
     draft.reelUrl = draft.reelTitle = '';
     render(); const n = $('[data-f="reelUrl"]'); if (n) n.focus();
-  } }, url, h('div', { class: 'row2' }, ttl, h('button', { class: 'btn' }, 'Aggiungi')));
+  } }, url, h('div', { class: 'row2' }, ttl, h('button', { class: 'btn' }, 'Aggiungi')),
+    h('button', { type: 'button', class: 'btn ghost', onclick: openNotes }, 'Incolla note (pi\u00f9 reel insieme)'));
 
   const list = h('div', { class: 'list' });
   if (!c.reels.length) list.append(h('div', { class: 'empty' }, 'Incolla il primo link qui sopra'));
@@ -294,6 +335,12 @@ function openClientDialog() {
 $('#formClient').addEventListener('submit', () => {
   const n = $('#clientName').value.trim(); if (n) addClient(n);
 });
+
+const dlgNotes = $('#dlgNotes');
+dlgNotes.addEventListener('click', e => { if (e.target === dlgNotes) dlgNotes.close(); });
+dlgNotes.querySelector('[data-close]').onclick = () => dlgNotes.close();
+function openNotes() { $('#notesText').value = ''; dlgNotes.showModal(); setTimeout(() => $('#notesText').focus(), 50); }
+$('#formNotes').addEventListener('submit', () => importNotes($('#notesText').value));
 
 function openMenu() {
   const m = $('#menuBody'); m.replaceChildren(
