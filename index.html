@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Content Desk</title>
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Content Desk">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preload" href="fonts/NulshockRg-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+<div id="app"></div>
+
+<dialog id="dlgClient">
+  <form method="dialog" id="formClient">
+    <h3>Nuovo cliente</h3>
+    <input id="clientName" data-nofocus placeholder="Nome del cliente" autocomplete="off" maxlength="60">
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" data-close>Annulla</button>
+      <button class="btn">Crea</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgMenu">
+  <div id="menuBody"></div>
+</dialog>
+
+<div id="toast" role="status"></div>
+<input type="file" id="file" accept=".json" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
