@@ -15,8 +15,12 @@ create table if not exists public.items (
   title text not null,
   url text,
   done boolean not null default false,
+  picked boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- per chi ha gia creato la tabella
+alter table public.items add column if not exists picked boolean not null default false;
 
 create index if not exists items_client_idx on public.items(client_id);
 

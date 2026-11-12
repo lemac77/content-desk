@@ -35,12 +35,26 @@
 
 <dialog id="dlgNotes">
   <form method="dialog" id="formNotes">
-    <h3>Incolla note</h3>
+    <h3 id="notesTitle">Incolla note</h3>
     <textarea id="notesText" placeholder="Titolo&#10;link&#10;&#10;Titolo&#10;link"></textarea>
-    <div class="tip">Una coppia titolo + link per volta. Aggiungo tutto in un colpo.</div>
+    <div class="tip" id="notesTip"></div>
     <div class="dlg-actions">
       <button type="button" class="btn ghost" data-close>Annulla</button>
       <button class="btn">Aggiungi tutto</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgEdit">
+  <form method="dialog" id="formEdit">
+    <h3>Modifica</h3>
+    <div class="fields">
+      <input id="editTitle" placeholder="Titolo" autocomplete="off">
+      <div id="editUrlWrap"><input id="editUrl" placeholder="Link" inputmode="url" autocapitalize="none" autocorrect="off"></div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" data-close>Annulla</button>
+      <button class="btn">Salva</button>
     </div>
   </form>
 </dialog>

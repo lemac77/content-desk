@@ -8,7 +8,7 @@ const sb = remote ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_
 
 let user = null;
 let state = { clients: [] };           // { id, name, t, reels:[{id,title,url,done,t}], topics:[{id,title,done,t}] }
-let ui = { active: null, tab: 'reels' };
+let ui = { active: null, tab: 'reels', mode: 'edit' };
 const draft = { reelUrl: '', reelTitle: '', topic: '' };
 
 /* ---------- utils ---------- */
@@ -27,6 +27,8 @@ const ICON = {
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z"/></svg>',
+  pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg>',
   out: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 7l4-4M3.5 3H7v3.5"/></svg>'
 };
 const icon = n => { const s = document.createElement('span'); s.innerHTML = ICON[n]; s.style.display = 'contents'; return s; };
@@ -59,7 +61,7 @@ function platform(url) {
   return ['link', 'Link'];
 }
 const normUrl = u => { u = u.trim(); return /^https?:\/\//i.test(u) ? u : 'https://' + u; };
-const sortItems = a => [...a].sort((x, y) => (x.done - y.done) || (y.t - x.t));
+const sortItems = a => [...a].sort((x, y) => (x.done - y.done) || ((!!y.picked) - (!!x.picked)) || (y.t - x.t));
 
 /* ---------- persistence ---------- */
 const cacheKey = () => 'cd2:' + (user ? user.id : 'local');
@@ -92,7 +94,7 @@ async function load() {
     }) };
     i.data.forEach(r => {
       const o = map.get(r.client_id); if (!o) return;
-      const it = { id: r.id, title: r.title, done: r.done, t: Date.parse(r.created_at) };
+      const it = { id: r.id, title: r.title, done: r.done, picked: !!r.picked, t: Date.parse(r.created_at) };
       if (r.kind === 'reel') { it.url = r.url; o.reels.push(it); } else o.topics.push(it);
     });
     persist(); render();
@@ -178,6 +180,28 @@ function importNotes(text) {
 function toggle(it) {
   mut(() => { it.done = !it.done; }, () => sb.from('items').update({ done: it.done }).eq('id', it.id));
 }
+function togglePick(it) {
+  mut(() => { it.picked = !it.picked; }, () => sb.from('items').update({ picked: it.picked }).eq('id', it.id));
+}
+function editItem(it, fields) {
+  mut(() => Object.assign(it, fields), () => sb.from('items').update(fields).eq('id', it.id));
+}
+function parseTopics(text) {
+  return text.split(/\r?\n/).map(l => l.trim().replace(/^([-*•–]|\d+[.)])\s+/, '').trim()).filter(Boolean);
+}
+function importTopics(text) {
+  const c = cur(); if (!c) return toast('Crea prima un cliente');
+  const have = new Set(c.topics.map(t => t.title.toLowerCase()));
+  const found = parseTopics(text).filter(t => !have.has(t.toLowerCase()) && have.add(t.toLowerCase()));
+  if (!found.length) return toast('Nessun topic nuovo trovato');
+  const base = Date.now();
+  const items = found.map((t, i) => ({ id: uuid(), title: t, done: false, picked: false, t: base + (found.length - i) }));
+  mut(() => c.topics.push(...items),
+      () => sb.from('items').insert(items.map(it => ({
+        id: it.id, client_id: c.id, kind: 'topic', title: it.title, done: false,
+        created_at: new Date(it.t).toISOString() }))));
+  toast(items.length + (items.length === 1 ? ' topic aggiunto' : ' topic aggiunti'));
+}
 function delItem(list, it) {
   mut(() => { list.splice(list.indexOf(it), 1); }, () => sb.from('items').delete().eq('id', it.id));
 }
@@ -215,28 +239,37 @@ function body() {
     h('h1', {}, 'Nessun cliente'), h('p', {}, 'Crea il primo cliente e inizia a raccogliere idee.'),
     h('button', { class: 'btn', onclick: openClientDialog }, 'Aggiungi cliente'));
 
+  const client = ui.mode === 'client';
+  const vis = a => client ? a.filter(x => x.picked) : a;
   const left = a => a.filter(x => !x.done).length;
-  const wrap = h('div', {});
+  const picked = c.reels.filter(x => x.picked).length + c.topics.filter(x => x.picked).length;
+  const wrap = h('div', { class: client ? 'mode-client' : 'mode-edit' });
   wrap.append(
     h('div', { class: 'hero' },
       h('div', {}, h('h1', {}, c.name),
-        h('div', { class: 'sub' }, h('b', {}, left(c.reels) + left(c.topics)), ' da fare')),
-      h('button', { class: 'link-danger', onclick: () => delClient(c) }, 'Elimina cliente')),
+        h('div', { class: 'sub' }, client
+          ? [h('b', {}, left(vis(c.reels)) + left(vis(c.topics))), ' da fare con il cliente']
+          : [h('b', {}, left(c.reels) + left(c.topics)), ' da fare · ', h('b', {}, picked), ' scelti'])),
+      client ? null : h('button', { class: 'link-danger', onclick: () => delClient(c) }, 'Elimina cliente')),
+    h('div', { class: 'modesw' },
+      h('button', { class: client ? '' : 'on', onclick: () => setMode('edit') }, 'Modifica'),
+      h('button', { class: client ? 'on' : '', onclick: () => setMode('client') }, 'Cliente' + (picked ? ' (' + picked + ')' : ''))),
     h('div', { class: 'seg' },
-      h('button', { class: ui.tab === 'reels' ? 'on' : '', onclick: () => setTab('reels') }, 'Reel (' + left(c.reels) + ')'),
-      h('button', { class: ui.tab === 'topics' ? 'on' : '', onclick: () => setTab('topics') }, 'Contenuti (' + left(c.topics) + ')')),
-    h('div', { class: 'cols', 'data-tab': ui.tab }, reelsCard(c), topicsCard(c))
+      h('button', { class: ui.tab === 'reels' ? 'on' : '', onclick: () => setTab('reels') }, 'Reel (' + left(vis(c.reels)) + ')'),
+      h('button', { class: ui.tab === 'topics' ? 'on' : '', onclick: () => setTab('topics') }, 'Contenuti (' + left(vis(c.topics)) + ')')),
+    h('div', { class: 'cols', 'data-tab': ui.tab }, reelsCard(c, client), topicsCard(c, client))
   );
   return wrap;
 }
 const setTab = t => { ui.tab = t; persist(); render(); };
+const setMode = m => { ui.mode = m; persist(); render(); window.scrollTo({ top: 0 }); };
 
 function cardHead(title, list) {
   return h('div', { class: 'card-h' }, h('h2', {}, title),
     h('span', { class: 'count' }, list.filter(x => !x.done).length + ' / ' + list.length));
 }
 
-function reelsCard(c) {
+function reelsCard(c, client) {
   const url = h('input', { 'data-f': 'reelUrl', placeholder: 'Incolla il link TikTok o Instagram', inputmode: 'url',
     autocapitalize: 'none', autocorrect: 'off', value: draft.reelUrl, oninput: e => draft.reelUrl = e.target.value,
     onpaste: e => {
@@ -253,40 +286,50 @@ function reelsCard(c) {
     draft.reelUrl = draft.reelTitle = '';
     render(); const n = $('[data-f="reelUrl"]'); if (n) n.focus();
   } }, url, h('div', { class: 'row2' }, ttl, h('button', { class: 'btn' }, 'Aggiungi')),
-    h('button', { type: 'button', class: 'btn ghost', onclick: openNotes }, 'Incolla note (pi\u00f9 reel insieme)'));
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => openNotes('reel') }, 'Incolla note (pi\u00f9 reel insieme)'));
 
+  const shown = client ? c.reels.filter(x => x.picked) : c.reels;
   const list = h('div', { class: 'list' });
-  if (!c.reels.length) list.append(h('div', { class: 'empty' }, 'Incolla il primo link qui sopra'));
-  sortItems(c.reels).forEach(it => {
+  if (!shown.length) list.append(h('div', { class: 'empty' }, client ? 'Nessun reel scelto. Passa a Modifica e premi la stella.' : 'Incolla il primo link qui sopra'));
+  sortItems(shown).forEach(it => {
     const [k, name] = platform(it.url);
-    list.append(row(it, c.reels,
+    list.append(row(it, c.reels, client, true,
       h('a', { class: 'ttl', href: it.url, target: '_blank', rel: 'noopener' }, it.title),
       h('span', { class: 'chip ' + k }, name, icon('out'))));
   });
-  return h('section', { class: 'card reels' }, cardHead('Ispirazione reel', c.reels), form, list);
+  return h('section', { class: 'card reels' }, cardHead(client ? 'Reel scelti' : 'Ispirazione reel', shown), client ? null : form, list);
 }
 
-function topicsCard(c) {
+function topicsCard(c, client) {
   const inp = h('input', { 'data-f': 'topic', placeholder: 'Nuovo topic o idea', value: draft.topic,
-    oninput: e => draft.topic = e.target.value });
+    oninput: e => draft.topic = e.target.value,
+    onpaste: e => {
+      const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
+      if (t.trim().includes('\n')) { e.preventDefault(); importTopics(t); }
+    } });
   const form = h('form', { class: 'composer', onsubmit: e => {
     e.preventDefault();
     const t = draft.topic.trim(); if (!t) return;
     addItem(c, 'topic', { id: uuid(), title: t, done: false, t: Date.now() });
     draft.topic = ''; render(); const n = $('[data-f="topic"]'); if (n) n.focus();
-  } }, h('div', { class: 'row2' }, inp, h('button', { class: 'btn' }, 'Aggiungi')));
+  } }, h('div', { class: 'row2' }, inp, h('button', { class: 'btn' }, 'Aggiungi')),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => openNotes('topic') }, 'Incolla note (pi\u00f9 topic insieme)'));
 
+  const shown = client ? c.topics.filter(x => x.picked) : c.topics;
   const list = h('div', { class: 'list' });
-  if (!c.topics.length) list.append(h('div', { class: 'empty' }, 'Scrivi il primo topic qui sopra'));
-  sortItems(c.topics).forEach(it => list.append(row(it, c.topics, h('span', { class: 'ttl topic-t' }, it.title))));
-  return h('section', { class: 'card topics' }, cardHead('Altri contenuti', c.topics), form, list);
+  if (!shown.length) list.append(h('div', { class: 'empty' }, client ? 'Nessun contenuto scelto. Passa a Modifica e premi la stella.' : 'Scrivi il primo topic qui sopra'));
+  sortItems(shown).forEach(it => list.append(row(it, c.topics, client, false, h('span', { class: 'ttl topic-t' }, it.title))));
+  return h('section', { class: 'card topics' }, cardHead(client ? 'Contenuti scelti' : 'Altri contenuti', shown), client ? null : form, list);
 }
 
-function row(it, list, ...content) {
-  return h('div', { class: 'item' + (it.done ? ' done' : '') },
+function row(it, list, client, isReel, ...content) {
+  return h('div', { class: 'item' + (it.done ? ' done' : '') + (it.picked ? ' picked' : '') },
     h('button', { class: 'chk', 'aria-label': 'Segna come fatto', onclick: () => toggle(it) }, icon('check')),
     h('div', { class: 'body' }, ...content),
-    h('button', { class: 'x', 'aria-label': 'Elimina', onclick: () => delItem(list, it) }, icon('x')));
+    client ? null : h('div', { class: 'acts' },
+      h('button', { class: 'ib star' + (it.picked ? ' on' : ''), 'aria-label': 'Scegli per il cliente', onclick: () => togglePick(it) }, icon('star')),
+      h('button', { class: 'ib', 'aria-label': 'Modifica', onclick: () => openEdit(it, isReel) }, icon('pen')),
+      h('button', { class: 'ib x', 'aria-label': 'Elimina', onclick: () => delItem(list, it) }, icon('x'))));
 }
 
 /* ---------- login ---------- */
@@ -339,8 +382,35 @@ $('#formClient').addEventListener('submit', () => {
 const dlgNotes = $('#dlgNotes');
 dlgNotes.addEventListener('click', e => { if (e.target === dlgNotes) dlgNotes.close(); });
 dlgNotes.querySelector('[data-close]').onclick = () => dlgNotes.close();
-function openNotes() { $('#notesText').value = ''; dlgNotes.showModal(); setTimeout(() => $('#notesText').focus(), 50); }
-$('#formNotes').addEventListener('submit', () => importNotes($('#notesText').value));
+let notesKind = 'reel';
+function openNotes(kind) {
+  notesKind = kind;
+  $('#notesTitle').textContent = kind === 'reel' ? 'Incolla note reel' : 'Incolla note contenuti';
+  $('#notesTip').textContent = kind === 'reel'
+    ? 'Una coppia titolo + link per volta. Aggiungo tutto in un colpo.'
+    : 'Un topic per riga. Elenchi puntati e numerati vanno bene.';
+  $('#notesText').placeholder = kind === 'reel' ? 'Titolo\nlink\n\nTitolo\nlink' : 'Topic uno\nTopic due\nTopic tre';
+  $('#notesText').value = ''; dlgNotes.showModal(); setTimeout(() => $('#notesText').focus(), 50);
+}
+$('#formNotes').addEventListener('submit', () => (notesKind === 'reel' ? importNotes : importTopics)($('#notesText').value));
+
+const dlgEdit = $('#dlgEdit');
+let editing = null;
+dlgEdit.addEventListener('click', e => { if (e.target === dlgEdit) dlgEdit.close(); });
+dlgEdit.querySelector('[data-close]').onclick = () => dlgEdit.close();
+function openEdit(it, isReel) {
+  editing = it;
+  $('#editTitle').value = it.title;
+  $('#editUrlWrap').hidden = !isReel;
+  $('#editUrl').value = it.url || '';
+  dlgEdit.showModal();
+}
+$('#formEdit').addEventListener('submit', () => {
+  const it = editing; if (!it) return;
+  const fields = { title: $('#editTitle').value.trim() || it.title };
+  if (!$('#editUrlWrap').hidden && $('#editUrl').value.trim()) fields.url = normUrl($('#editUrl').value);
+  editItem(it, fields);
+});
 
 function openMenu() {
   const m = $('#menuBody'); m.replaceChildren(
