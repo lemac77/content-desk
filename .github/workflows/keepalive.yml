@@ -1,0 +1,27 @@
+name: Supabase keep-alive
+
+# Supabase free mette in pausa i progetti dopo 7 giorni senza attivita.
+# Questo job fa una query leggera ogni 3 giorni.
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping Supabase
+        run: |
+          URL=$(sed -n 's/.*SUPABASE_URL: *"\([^"]*\)".*/\1/p' config.js)
+          KEY=$(sed -n 's/.*SUPABASE_ANON_KEY: *"\([^"]*\)".*/\1/p' config.js)
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::warning::config.js senza chiavi Supabase, nessun ping"
+            exit 0
+          fi
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            "$URL/rest/v1/clients?select=id&limit=1")
+          echo "Supabase HTTP $CODE"
+          [ "$CODE" = "200" ]

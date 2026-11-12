@@ -33,6 +33,12 @@ L'indirizzo sara' `https://TUOUSER.github.io/content-desk/`.
 
 Il repo e' pubblico ma i dati no: stanno su Supabase dietro login.
 
+## Keep-alive Supabase
+
+Il piano gratuito mette in pausa il progetto dopo 7 giorni di inattivita. Il workflow `.github/workflows/keepalive.yml` fa una query leggera ogni 3 giorni leggendo URL e chiave da `config.js` (nessun secret da impostare). Se `config.js` e' vuoto non fa nulla. Lancialo a mano da GitHub > Actions > Supabase keep-alive > Run workflow.
+
+GitHub sospende i cron dopo 60 giorni senza commit nel repo: se succede, basta un push per riattivarlo.
+
 ## 4. iPhone
 
 Apri l'indirizzo in Safari, tocca Condividi, poi "Aggiungi alla schermata Home". Si apre a schermo intero come un'app.
