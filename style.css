@@ -192,3 +192,10 @@ dialog #clientName:focus{border-color:var(--y)}
 .seg button{font-size:14px;padding:11px 6px}
 .mode-client .struct p{font-size:17px}
 #notesText{min-height:260px}
+
+/* una sezione alla volta anche su desktop: tab sempre visibili */
+.seg{display:flex;max-width:560px}
+.cols{grid-template-columns:1fr}
+.cols .card{display:none}
+.cols[data-tab="reels"] .card.reels,.cols[data-tab="topics"] .card.topics,.cols[data-tab="scripts"] .card.scripts{display:block}
+.card.scripts{grid-column:auto}
