@@ -185,19 +185,31 @@ function toggle(it) {
   mut(() => { it.done = !it.done; }, () => sb.from('items').update({ done: it.done }).eq('id', it.id));
 }
 function parseScripts(text) {
+  const lines = text.replace(/\r/g, '').split('\n');
+  const LABEL = /^\**\s*(hook|testo parlato|cta|chiusura|apertura|scena|visual|note|didascalia)\s*:?\s*\**$/i;
+  const SUB = /^\**\s*sottotitolo\s*:?\s*\**\s*:?\s*(.*)$/i;
+  const nextLine = i => { for (let j = i + 1; j < lines.length; j++) if (lines[j].trim()) return lines[j].trim(); return ''; };
   const out = []; let cur = null;
   const flush = () => { if (cur) { cur.body = cur.body.join('\n').trim(); out.push(cur); cur = null; } };
-  for (const raw of text.replace(/\r/g, '').split('\n')) {
+  lines.forEach((raw, i) => {
     const line = raw.trim();
-    const hm = line.match(/^###\s+(.+)$/);
-    if (hm) { flush(); cur = { title: hm[1].replace(/^\d+[.)]\s*/, '').trim(), subtitle: '', body: [] }; continue; }
-    if (!cur) continue;
-    if (/^-{3,}$/.test(line)) continue;
-    if (/^#{1,2}\s/.test(line)) { flush(); continue; }
-    const sm = line.match(/^\*\*sottotitolo:?\*\*:?\s*(.*)$/i);
-    if (sm && !cur.subtitle) { cur.subtitle = sm[1].trim(); continue; }
+    const md = line.match(/^#{3,}\s*(.+)$/);
+    const num = line.match(/^(\d{1,3})[.)]\s+(.+)$/);
+    const isTitle = md || (num && SUB.test(nextLine(i)));
+    if (isTitle) {
+      flush();
+      cur = { title: (md ? md[1] : num[2]).replace(/^\d{1,3}[.)]\s*/, '').replace(/\*\*/g, '').trim(), subtitle: '', body: [] };
+      return;
+    }
+    if (!cur) return;
+    if (/^[-_*]{3,}$/.test(line)) return;
+    if (/^#{1,2}\s/.test(line)) { flush(); return; }
+    const sm = line.match(SUB);
+    if (sm && !cur.subtitle) { cur.subtitle = sm[1].replace(/\*\*/g, '').trim(); return; }
+    const lm = line.match(LABEL);
+    if (lm) { cur.body.push('**' + lm[1].toUpperCase() + '**'); return; }
     cur.body.push(raw.trimEnd());
-  }
+  });
   flush();
   return out.filter(s => s.title);
 }
@@ -209,7 +221,7 @@ function importScripts(text) {
   const c = cur(); if (!c) return toast('Crea prima un cliente');
   const have = new Set(c.scripts.map(s => s.title.toLowerCase()));
   const found = parseScripts(text).filter(s => !have.has(s.title.toLowerCase()) && have.add(s.title.toLowerCase()));
-  if (!found.length) return toast('Nessuna scaletta nuova trovata');
+  if (!found.length) { alert(parseScripts(text).length ? 'Queste scalette ci sono gia.' : 'Non trovo scalette nel testo. Servono titolo numerato (es. "01. TITOLO") e una riga "Sottotitolo: ...".'); return; }
   const base = Date.now();
   const items = found.map((s, i) => ({ id: uuid(), title: s.title, subtitle: s.subtitle, body: s.body, done: false, picked: false, t: base + (found.length - i) }));
   mut(() => c.scripts.push(...items), () => sb.from('items').insert(items.map(it => scriptRow(c, it))));
