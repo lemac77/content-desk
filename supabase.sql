@@ -11,16 +11,22 @@ create table if not exists public.items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   client_id uuid not null references public.clients(id) on delete cascade,
-  kind text not null check (kind in ('reel', 'topic')),
+  kind text not null check (kind in ('reel', 'topic', 'script')),
   title text not null,
   url text,
   done boolean not null default false,
   picked boolean not null default false,
+  subtitle text,
+  body text,
   created_at timestamptz not null default now()
 );
 
 -- per chi ha gia creato la tabella
 alter table public.items add column if not exists picked boolean not null default false;
+alter table public.items add column if not exists subtitle text;
+alter table public.items add column if not exists body text;
+alter table public.items drop constraint if exists items_kind_check;
+alter table public.items add constraint items_kind_check check (kind in ('reel', 'topic', 'script'));
 
 create index if not exists items_client_idx on public.items(client_id);
 

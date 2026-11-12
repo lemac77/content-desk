@@ -9,6 +9,7 @@ const sb = remote ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_
 let user = null;
 let state = { clients: [] };           // { id, name, t, reels:[{id,title,url,done,t}], topics:[{id,title,done,t}] }
 let ui = { active: null, tab: 'reels', mode: 'edit' };
+const openStruct = new Set();
 const draft = { reelUrl: '', reelTitle: '', topic: '' };
 
 /* ---------- utils ---------- */
@@ -89,13 +90,15 @@ async function load() {
     if (c.error) throw c.error; if (i.error) throw i.error;
     const map = new Map();
     state = { clients: c.data.map(r => {
-      const o = { id: r.id, name: r.name, t: Date.parse(r.created_at), reels: [], topics: [] };
+      const o = { id: r.id, name: r.name, t: Date.parse(r.created_at), reels: [], topics: [], scripts: [] };
       map.set(r.id, o); return o;
     }) };
     i.data.forEach(r => {
       const o = map.get(r.client_id); if (!o) return;
       const it = { id: r.id, title: r.title, done: r.done, picked: !!r.picked, t: Date.parse(r.created_at) };
-      if (r.kind === 'reel') { it.url = r.url; o.reels.push(it); } else o.topics.push(it);
+      if (r.kind === 'reel') { it.url = r.url; o.reels.push(it); }
+      else if (r.kind === 'script') { it.subtitle = r.subtitle || ''; it.body = r.body || ''; o.scripts.push(it); }
+      else o.topics.push(it);
     });
     persist(); render();
   } catch (e) { toast('Offline: uso i dati salvati'); }
@@ -122,9 +125,10 @@ function mut(local, rem) {
 
 /* ---------- actions ---------- */
 const cur = () => state.clients.find(c => c.id === ui.active);
+const norm = () => state.clients.forEach(c => { c.reels = c.reels || []; c.topics = c.topics || []; c.scripts = c.scripts || []; });
 
 function addClient(name) {
-  const c = { id: uuid(), name, t: Date.now(), reels: [], topics: [] };
+  const c = { id: uuid(), name, t: Date.now(), reels: [], topics: [], scripts: [] };
   mut(() => { state.clients.push(c); ui.active = c.id; },
       () => sb.from('clients').insert({ id: c.id, name, created_at: new Date(c.t).toISOString() }));
 }
@@ -180,6 +184,51 @@ function importNotes(text) {
 function toggle(it) {
   mut(() => { it.done = !it.done; }, () => sb.from('items').update({ done: it.done }).eq('id', it.id));
 }
+function parseScripts(text) {
+  const out = []; let cur = null;
+  const flush = () => { if (cur) { cur.body = cur.body.join('\n').trim(); out.push(cur); cur = null; } };
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    const hm = line.match(/^###\s+(.+)$/);
+    if (hm) { flush(); cur = { title: hm[1].replace(/^\d+[.)]\s*/, '').trim(), subtitle: '', body: [] }; continue; }
+    if (!cur) continue;
+    if (/^-{3,}$/.test(line)) continue;
+    if (/^#{1,2}\s/.test(line)) { flush(); continue; }
+    const sm = line.match(/^\*\*sottotitolo:?\*\*:?\s*(.*)$/i);
+    if (sm && !cur.subtitle) { cur.subtitle = sm[1].trim(); continue; }
+    cur.body.push(raw.trimEnd());
+  }
+  flush();
+  return out.filter(s => s.title);
+}
+const scriptRow = (c, it) => ({
+  id: it.id, client_id: c.id, kind: 'script', title: it.title, subtitle: it.subtitle || null, body: it.body || null,
+  done: !!it.done, picked: !!it.picked, created_at: new Date(it.t).toISOString()
+});
+function importScripts(text) {
+  const c = cur(); if (!c) return toast('Crea prima un cliente');
+  const have = new Set(c.scripts.map(s => s.title.toLowerCase()));
+  const found = parseScripts(text).filter(s => !have.has(s.title.toLowerCase()) && have.add(s.title.toLowerCase()));
+  if (!found.length) return toast('Nessuna scaletta nuova trovata');
+  const base = Date.now();
+  const items = found.map((s, i) => ({ id: uuid(), title: s.title, subtitle: s.subtitle, body: s.body, done: false, picked: false, t: base + (found.length - i) }));
+  mut(() => c.scripts.push(...items), () => sb.from('items').insert(items.map(it => scriptRow(c, it))));
+  toast(items.length + (items.length === 1 ? ' scaletta aggiunta' : ' scalette aggiunte'));
+}
+function addScript(c, f) {
+  const it = { id: uuid(), title: f.title, subtitle: f.subtitle, body: f.body, done: false, picked: false, t: Date.now() };
+  mut(() => c.scripts.unshift(it), () => sb.from('items').insert(scriptRow(c, it)));
+}
+function structView(body) {
+  const para = t => t.trim().replace(/^["“”«]+|["“”»]+$/g, '').replace(/\*\*/g, '').trim();
+  const parts = body.split(/^\*\*(.+?)\*\*[ \t]*$/m);
+  const wrap = h('div', { class: 'struct' });
+  if (parts[0].trim()) wrap.append(h('p', {}, para(parts[0])));
+  for (let i = 1; i < parts.length; i += 2)
+    wrap.append(h('div', { class: 'sect' }, h('span', { class: 'lab' }, parts[i]), h('p', {}, para(parts[i + 1] || ''))));
+  return wrap;
+}
+
 function togglePick(it) {
   mut(() => { it.picked = !it.picked; }, () => sb.from('items').update({ picked: it.picked }).eq('id', it.id));
 }
@@ -211,6 +260,7 @@ function render() {
   const focusKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.f : null;
   const app = $('#app'); app.replaceChildren();
   if (remote && !user) { app.append(loginView()); return; }
+  norm();
   if (!state.clients.find(c => c.id === ui.active)) ui.active = state.clients[0] ? state.clients[0].id : null;
 
   app.append(h('div', { class: 'shell' }, topbar(), pills(), body()));
@@ -225,7 +275,7 @@ const topbar = () => h('div', { class: 'topbar' },
 function pills() {
   const row = h('div', { class: 'pills' });
   state.clients.forEach(c => {
-    const left = c.reels.filter(x => !x.done).length + c.topics.filter(x => !x.done).length;
+    const left = [...c.reels, ...c.topics, ...c.scripts].filter(x => !x.done).length;
     row.append(h('button', { class: 'pill' + (c.id === ui.active ? ' on' : ''),
       onclick: () => { ui.active = c.id; persist(); render(); } }, c.name, h('span', { class: 'n' }, left)));
   });
@@ -242,22 +292,25 @@ function body() {
   const client = ui.mode === 'client';
   const vis = a => client ? a.filter(x => x.picked) : a;
   const left = a => a.filter(x => !x.done).length;
-  const picked = c.reels.filter(x => x.picked).length + c.topics.filter(x => x.picked).length;
+  const all = [c.reels, c.topics, c.scripts];
+  const picked = all.reduce((n, l) => n + l.filter(x => x.picked).length, 0);
+  const todo = all.reduce((n, l) => n + left(vis(l)), 0);
   const wrap = h('div', { class: client ? 'mode-client' : 'mode-edit' });
   wrap.append(
     h('div', { class: 'hero' },
       h('div', {}, h('h1', {}, c.name),
         h('div', { class: 'sub' }, client
-          ? [h('b', {}, left(vis(c.reels)) + left(vis(c.topics))), ' da fare con il cliente']
-          : [h('b', {}, left(c.reels) + left(c.topics)), ' da fare · ', h('b', {}, picked), ' scelti'])),
+          ? [h('b', {}, todo), ' da fare con il cliente']
+          : [h('b', {}, todo), ' da fare · ', h('b', {}, picked), ' scelti'])),
       client ? null : h('button', { class: 'link-danger', onclick: () => delClient(c) }, 'Elimina cliente')),
     h('div', { class: 'modesw' },
       h('button', { class: client ? '' : 'on', onclick: () => setMode('edit') }, 'Modifica'),
       h('button', { class: client ? 'on' : '', onclick: () => setMode('client') }, 'Cliente' + (picked ? ' (' + picked + ')' : ''))),
     h('div', { class: 'seg' },
-      h('button', { class: ui.tab === 'reels' ? 'on' : '', onclick: () => setTab('reels') }, 'Reel (' + left(vis(c.reels)) + ')'),
-      h('button', { class: ui.tab === 'topics' ? 'on' : '', onclick: () => setTab('topics') }, 'Contenuti (' + left(vis(c.topics)) + ')')),
-    h('div', { class: 'cols', 'data-tab': ui.tab }, reelsCard(c, client), topicsCard(c, client))
+      h('button', { class: ui.tab === 'reels' ? 'on' : '', onclick: () => setTab('reels') }, 'Reel ' + left(vis(c.reels))),
+      h('button', { class: ui.tab === 'topics' ? 'on' : '', onclick: () => setTab('topics') }, 'Contenuti ' + left(vis(c.topics))),
+      h('button', { class: ui.tab === 'scripts' ? 'on' : '', onclick: () => setTab('scripts') }, 'Scalette ' + left(vis(c.scripts)))),
+    h('div', { class: 'cols', 'data-tab': ui.tab }, reelsCard(c, client), topicsCard(c, client), scriptsCard(c, client))
   );
   return wrap;
 }
@@ -267,6 +320,31 @@ const setMode = m => { ui.mode = m; persist(); render(); window.scrollTo({ top: 
 function cardHead(title, list) {
   return h('div', { class: 'card-h' }, h('h2', {}, title),
     h('span', { class: 'count' }, list.filter(x => !x.done).length + ' / ' + list.length));
+}
+
+function scriptsCard(c, client) {
+  const shown = client ? c.scripts.filter(x => x.picked) : c.scripts;
+  const bar = h('div', { class: 'composer' },
+    h('button', { type: 'button', class: 'btn', onclick: () => openNotes('script') }, 'Incolla scalette'),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => openEdit(null, 'script') }, 'Nuova scaletta a mano'));
+  const list = h('div', { class: 'list' });
+  if (!shown.length) list.append(h('div', { class: 'empty' }, client ? 'Nessuna scaletta scelta. Passa a Modifica e premi la stella.' : 'Incolla il piano editoriale qui sopra'));
+  sortItems(shown).forEach(it => {
+    const open = openStruct.has(it.id);
+    const struct = it.body ? structView(it.body) : null;
+    if (struct && !open) struct.hidden = true;
+    const btn = it.body ? h('button', { class: 'struct-btn' + (open ? ' on' : ''), onclick: e => {
+      const now = !openStruct.has(it.id);
+      now ? openStruct.add(it.id) : openStruct.delete(it.id);
+      struct.hidden = !now; e.currentTarget.classList.toggle('on', now);
+      e.currentTarget.textContent = now ? 'Nascondi struttura' : 'Vedi struttura';
+    } }, open ? 'Nascondi struttura' : 'Vedi struttura') : null;
+    list.append(row(it, c.scripts, client, 'script',
+      h('span', { class: 'ttl script-t' }, it.title),
+      it.subtitle ? h('span', { class: 'subt' }, it.subtitle) : null,
+      btn, struct));
+  });
+  return h('section', { class: 'card scripts' }, cardHead(client ? 'Scalette scelte' : 'Scalette video', shown), client ? null : bar, list);
 }
 
 function reelsCard(c, client) {
@@ -293,7 +371,7 @@ function reelsCard(c, client) {
   if (!shown.length) list.append(h('div', { class: 'empty' }, client ? 'Nessun reel scelto. Passa a Modifica e premi la stella.' : 'Incolla il primo link qui sopra'));
   sortItems(shown).forEach(it => {
     const [k, name] = platform(it.url);
-    list.append(row(it, c.reels, client, true,
+    list.append(row(it, c.reels, client, 'reel',
       h('a', { class: 'ttl', href: it.url, target: '_blank', rel: 'noopener' }, it.title),
       h('span', { class: 'chip ' + k }, name, icon('out'))));
   });
@@ -318,17 +396,17 @@ function topicsCard(c, client) {
   const shown = client ? c.topics.filter(x => x.picked) : c.topics;
   const list = h('div', { class: 'list' });
   if (!shown.length) list.append(h('div', { class: 'empty' }, client ? 'Nessun contenuto scelto. Passa a Modifica e premi la stella.' : 'Scrivi il primo topic qui sopra'));
-  sortItems(shown).forEach(it => list.append(row(it, c.topics, client, false, h('span', { class: 'ttl topic-t' }, it.title))));
+  sortItems(shown).forEach(it => list.append(row(it, c.topics, client, 'topic', h('span', { class: 'ttl topic-t' }, it.title))));
   return h('section', { class: 'card topics' }, cardHead(client ? 'Contenuti scelti' : 'Altri contenuti', shown), client ? null : form, list);
 }
 
-function row(it, list, client, isReel, ...content) {
-  return h('div', { class: 'item' + (it.done ? ' done' : '') + (it.picked ? ' picked' : '') },
+function row(it, list, client, kind, ...content) {
+  return h('div', { class: 'item' + (it.done ? ' done' : '') + (it.picked ? ' picked' : '') + (kind === 'script' ? ' is-script' : '') },
     h('button', { class: 'chk', 'aria-label': 'Segna come fatto', onclick: () => toggle(it) }, icon('check')),
     h('div', { class: 'body' }, ...content),
     client ? null : h('div', { class: 'acts' },
       h('button', { class: 'ib star' + (it.picked ? ' on' : ''), 'aria-label': 'Scegli per il cliente', onclick: () => togglePick(it) }, icon('star')),
-      h('button', { class: 'ib', 'aria-label': 'Modifica', onclick: () => openEdit(it, isReel) }, icon('pen')),
+      h('button', { class: 'ib', 'aria-label': 'Modifica', onclick: () => openEdit(it, kind) }, icon('pen')),
       h('button', { class: 'ib x', 'aria-label': 'Elimina', onclick: () => delItem(list, it) }, icon('x'))));
 }
 
@@ -383,32 +461,44 @@ const dlgNotes = $('#dlgNotes');
 dlgNotes.addEventListener('click', e => { if (e.target === dlgNotes) dlgNotes.close(); });
 dlgNotes.querySelector('[data-close]').onclick = () => dlgNotes.close();
 let notesKind = 'reel';
+const NOTES = {
+  reel: ['Incolla note reel', 'Una coppia titolo + link per volta. Aggiungo tutto in un colpo.', 'Titolo\nlink\n\nTitolo\nlink'],
+  topic: ['Incolla note contenuti', 'Un topic per riga. Elenchi puntati e numerati vanno bene.', 'Topic uno\nTopic due\nTopic tre'],
+  script: ['Incolla scalette', 'Incolla l\'intero piano editoriale: riconosco "### titolo", "Sottotitolo" e la struttura del video.', '### 01. TITOLO\n**Sottotitolo:** ...\n\n**HOOK**\n"..."\n\n**TESTO PARLATO**\n"..."']
+};
 function openNotes(kind) {
   notesKind = kind;
-  $('#notesTitle').textContent = kind === 'reel' ? 'Incolla note reel' : 'Incolla note contenuti';
-  $('#notesTip').textContent = kind === 'reel'
-    ? 'Una coppia titolo + link per volta. Aggiungo tutto in un colpo.'
-    : 'Un topic per riga. Elenchi puntati e numerati vanno bene.';
-  $('#notesText').placeholder = kind === 'reel' ? 'Titolo\nlink\n\nTitolo\nlink' : 'Topic uno\nTopic due\nTopic tre';
+  const [t, tip, ph] = NOTES[kind];
+  $('#notesTitle').textContent = t; $('#notesTip').textContent = tip; $('#notesText').placeholder = ph;
   $('#notesText').value = ''; dlgNotes.showModal(); setTimeout(() => $('#notesText').focus(), 50);
 }
-$('#formNotes').addEventListener('submit', () => (notesKind === 'reel' ? importNotes : importTopics)($('#notesText').value));
+$('#formNotes').addEventListener('submit', () => ({ reel: importNotes, topic: importTopics, script: importScripts })[notesKind]($('#notesText').value));
 
 const dlgEdit = $('#dlgEdit');
-let editing = null;
+let editCtx = null;
 dlgEdit.addEventListener('click', e => { if (e.target === dlgEdit) dlgEdit.close(); });
 dlgEdit.querySelector('[data-close]').onclick = () => dlgEdit.close();
-function openEdit(it, isReel) {
-  editing = it;
-  $('#editTitle').value = it.title;
-  $('#editUrlWrap').hidden = !isReel;
-  $('#editUrl').value = it.url || '';
+function openEdit(it, kind) {
+  editCtx = { it, kind };
+  $('#editHead').textContent = it ? 'Modifica' : 'Nuova scaletta';
+  $('#editTitle').value = it ? it.title : '';
+  $('#editUrlWrap').hidden = kind !== 'reel';
+  $('#editSubWrap').hidden = kind !== 'script';
+  $('#editBodyWrap').hidden = kind !== 'script';
+  $('#editUrl').value = (it && it.url) || '';
+  $('#editSub').value = (it && it.subtitle) || '';
+  $('#editBody').value = (it && it.body) || '';
   dlgEdit.showModal();
 }
 $('#formEdit').addEventListener('submit', () => {
-  const it = editing; if (!it) return;
-  const fields = { title: $('#editTitle').value.trim() || it.title };
-  if (!$('#editUrlWrap').hidden && $('#editUrl').value.trim()) fields.url = normUrl($('#editUrl').value);
+  const { it, kind } = editCtx || {}; if (!kind) return;
+  const title = $('#editTitle').value.trim();
+  if (kind === 'script') {
+    const f = { title: title || (it ? it.title : 'Scaletta'), subtitle: $('#editSub').value.trim(), body: $('#editBody').value.trim() };
+    return it ? editItem(it, f) : addScript(cur(), f);
+  }
+  const fields = { title: title || it.title };
+  if (kind === 'reel' && $('#editUrl').value.trim()) fields.url = normUrl($('#editUrl').value);
   editItem(it, fields);
 });
 
@@ -443,7 +533,8 @@ $('#file').addEventListener('change', async e => {
       const cr = add.map(c => ({ id: c.id, name: c.name, created_at: new Date(c.t || Date.now()).toISOString() }));
       const ir = add.flatMap(c => [
         ...c.reels.map(r => ({ id: r.id, client_id: c.id, kind: 'reel', title: r.title, url: r.url, done: !!r.done, created_at: new Date(r.t || Date.now()).toISOString() })),
-        ...c.topics.map(r => ({ id: r.id, client_id: c.id, kind: 'topic', title: r.title, done: !!r.done, created_at: new Date(r.t || Date.now()).toISOString() }))
+        ...c.topics.map(r => ({ id: r.id, client_id: c.id, kind: 'topic', title: r.title, done: !!r.done, created_at: new Date(r.t || Date.now()).toISOString() })),
+        ...(c.scripts || []).map(r => scriptRow(c, Object.assign({ t: Date.now() }, r)))
       ]);
       const a = await sb.from('clients').upsert(cr); if (a.error) return a;
       return ir.length ? sb.from('items').upsert(ir) : a;

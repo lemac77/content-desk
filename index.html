@@ -47,10 +47,12 @@
 
 <dialog id="dlgEdit">
   <form method="dialog" id="formEdit">
-    <h3>Modifica</h3>
+    <h3 id="editHead">Modifica</h3>
     <div class="fields">
       <input id="editTitle" placeholder="Titolo" autocomplete="off">
       <div id="editUrlWrap"><input id="editUrl" placeholder="Link" inputmode="url" autocapitalize="none" autocorrect="off"></div>
+      <div id="editSubWrap"><input id="editSub" placeholder="Sottotitolo" autocomplete="off"></div>
+      <div id="editBodyWrap"><textarea id="editBody" placeholder="Struttura del video (hook, testo parlato...)"></textarea></div>
     </div>
     <div class="dlg-actions">
       <button type="button" class="btn ghost" data-close>Annulla</button>

@@ -138,7 +138,8 @@ dialog #clientName:focus{border-color:var(--y)}
 @media (max-width:860px){
   .cols{grid-template-columns:1fr}
   .seg{display:flex}
-  .cols[data-tab="reels"] .card.topics,.cols[data-tab="topics"] .card.reels{display:none}
+  .cols .card{display:none}
+  .cols[data-tab="reels"] .card.reels,.cols[data-tab="topics"] .card.topics,.cols[data-tab="scripts"] .card.scripts{display:block}
   .card{padding:18px;border-radius:26px}
   .item{padding:12px 6px 12px 12px}
   .hero{flex-direction:column;align-items:flex-start}
@@ -172,3 +173,22 @@ dialog #clientName:focus{border-color:var(--y)}
 @media (max-width:860px){.ib{width:30px;height:30px}.ib svg{width:16px;height:16px}.item{gap:10px}}
 .topic-t{overflow:hidden;-webkit-line-clamp:4}
 .ib.x{opacity:.7}
+
+.card.scripts{grid-column:1/-1}
+.script-t{-webkit-line-clamp:3}
+.subt{color:var(--mute);font-size:14px;line-height:1.4;font-weight:500}
+.struct-btn{align-self:flex-start;margin-top:4px;padding:7px 14px;border-radius:999px;font-weight:700;font-size:13px;border:1.5px solid rgba(223,255,0,.45);color:var(--y);transition:.2s var(--spring)}
+.struct-btn.on,.struct-btn:active{background:var(--y);color:#000}
+.struct{margin-top:10px;padding:16px 18px;background:#000;border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;gap:14px}
+.struct[hidden]{display:none}
+.struct .lab{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#000;background:var(--y);padding:3px 10px;border-radius:999px;margin-bottom:8px}
+.struct p{white-space:pre-wrap;font-size:15.5px;line-height:1.55;color:var(--ink);font-weight:500}
+.is-script{align-items:flex-start}
+.is-script .chk{margin-top:2px}
+.is-script .acts{margin-top:-4px}
+#editBody{width:100%;min-height:200px;padding:15px 18px;border-radius:var(--r-in);border:2px solid transparent;background:var(--soft);color:var(--ink);outline:none;font:500 15px/1.5 Inter,system-ui,sans-serif;resize:vertical}
+#editBody:focus{border-color:var(--y)}
+#editSubWrap[hidden],#editBodyWrap[hidden],#editUrlWrap[hidden]{display:none}
+.seg button{font-size:14px;padding:11px 6px}
+.mode-client .struct p{font-size:17px}
+#notesText{min-height:260px}
