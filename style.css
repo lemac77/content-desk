@@ -199,3 +199,19 @@ dialog #clientName:focus{border-color:var(--y)}
 .cols .card{display:none}
 .cols[data-tab="reels"] .card.reels,.cols[data-tab="topics"] .card.topics,.cols[data-tab="scripts"] .card.scripts{display:block}
 .card.scripts{grid-column:auto}
+
+/* scalette: struttura a tutta larghezza, titolo intero */
+.item.is-script{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start;padding:14px 8px 14px 14px}
+.is-script .body{display:contents}
+.is-script .chk{grid-column:1;grid-row:1;margin-top:1px}
+.is-script .ttl{grid-column:2;grid-row:1;display:block;-webkit-line-clamp:unset;overflow:visible;overflow-wrap:anywhere;line-height:1.3}
+.is-script .acts{grid-column:3;grid-row:1;margin:-4px 0 0}
+.is-script .subt{grid-column:2/-1;margin-top:6px}
+.is-script .struct-btn{grid-column:1/-1;justify-self:start;margin-top:12px}
+.is-script .struct{grid-column:1/-1;margin:12px 6px 4px 0}
+@media (max-width:860px){
+  .card.scripts{padding:14px}
+  .item.is-script{padding:14px 6px 14px 12px}
+  .is-script .struct{padding:14px 14px;margin:12px 0 2px 0;border-radius:16px}
+  .struct p{font-size:15px;line-height:1.5}
+}
